@@ -7,5 +7,9 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces --if-present"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.81",
+    "dotenv": "^17.3.1"
   }
 }

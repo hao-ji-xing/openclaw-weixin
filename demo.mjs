@@ -10,7 +10,16 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
-import readline from "node:readline";
+import { createRequire } from "node:module";
+
+// 加载 .env
+const require = createRequire(import.meta.url);
+try {
+  const dotenv = require("dotenv");
+  dotenv.config();
+} catch {}
+
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
 // ─── 配置 ────────────────────────────────────────────────────────────────────
 
@@ -209,6 +218,39 @@ function extractText(msg) {
   return "[空消息]";
 }
 
+// ─── Claude Agent SDK ─────────────────────────────────────────────────────────
+
+/** 调用 Claude，返回最终文本回复 */
+async function askClaude(userText) {
+  async function* messages() {
+    yield {
+      type: "user",
+      session_id: "",
+      parent_tool_use_id: null,
+      message: { role: "user", content: userText },
+    };
+  }
+
+  let result = "";
+  for await (const msg of query({
+    prompt: messages(),
+    options: {
+      model: "sonnet",
+      allowedTools: [],          // 纯对话，不开工具
+      deniedTools: ["AskUserQuestion"],
+      systemPrompt: "你是一个微信聊天助手，用中文简洁友好地回复用户消息。",
+      cwd: process.cwd(),
+      env: process.env,
+      abortController: new AbortController(),
+    },
+  })) {
+    if (msg.type === "result") {
+      result = msg.result ?? "";
+    }
+  }
+  return result || "（Claude 无回复）";
+}
+
 // ─── 主循环 ───────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -250,12 +292,14 @@ async function main() {
         console.log(`📩 [${new Date().toLocaleTimeString()}] 收到消息`);
         console.log(`   From: ${from}`);
         console.log(`   Text: ${text}`);
-        console.log(`   context_token: ${contextToken?.slice(0, 20)}...`);
 
-        // 自动回复
-        const reply = `🤖 Echo: ${text}\n（来自裸调 iLink Bot API Demo）`;
+        // 调用 Claude 生成回复
+        process.stdout.write(`   🤔 Claude 思考中...`);
+        const reply = await askClaude(text);
+        process.stdout.write(` 完成\n`);
+
         await sendMessage(baseUrl, token, from, reply, contextToken);
-        console.log(`   ✅ 已回复\n`);
+        console.log(`   ✅ 已回复: ${reply.slice(0, 60)}${reply.length > 60 ? "…" : ""}\n`);
       }
     } catch (err) {
       if (err.message?.includes("session timeout") || err.message?.includes("-14")) {
